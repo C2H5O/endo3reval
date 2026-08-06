@@ -1,0 +1,11 @@
+endo3reval
+Copyright 2026 C2H5O
+
+The evaluation protocol implemented in src/endo3reval/vda.py is an adapter of
+the official Video Depth Anything benchmark implementation:
+https://github.com/DepthAnything/Video-Depth-Anything
+
+The original benchmark/eval/eval.py and benchmark/eval/metric.py files are
+licensed under the Apache License 2.0 by their respective copyright holders.
+The Endo3R model is not copied or modified by this repository; it is invoked as
+an external official checkout from https://github.com/wrld/Endo3R.

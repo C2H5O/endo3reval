@@ -1,0 +1,31 @@
+{
+  "dataset": {
+    "root": "/path/to/preprocessed/scared",
+    "dataset_ids": [8, 9],
+    "frame_sources": ["left_rectified", "left"],
+    "ground_truth_directory": "data/depthmap_rectified",
+    "ground_truth_scale": 0.001,
+    "ground_truth_channel": 0
+  },
+  "endo3r": {
+    "repository": "./external/Endo3R",
+    "python": "$CONDA_PREFIX/bin/python",
+    "checkpoint": "./external/Endo3R/checkpoints/endo3r.pth",
+    "required_runtime_files": [
+      "checkpoints/DUSt3R_ViTLarge_BaseDecoder_512_dpt.pth"
+    ],
+    "python_version": "3.9.25",
+    "device": "cuda:0",
+    "cuda_visible_devices": "0",
+    "resolution": 320,
+    "kf_every": 1
+  },
+  "evaluation": {
+    "device": "cuda",
+    "min_depth": 0.001,
+    "max_depth": 100.0,
+    "require_all_frames": true,
+    "result_file": "evaluation_vda.json"
+  },
+  "output_root": "./outputs/scared_endo3r_vda"
+}
