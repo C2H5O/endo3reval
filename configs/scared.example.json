@@ -14,7 +14,7 @@
     "required_runtime_files": [
       "checkpoints/DUSt3R_ViTLarge_BaseDecoder_512_dpt.pth"
     ],
-    "python_version": "3.9.25",
+    "python_version": "3.10.20",
     "device": "cuda:0",
     "cuda_visible_devices": "0",
     "resolution": 320,

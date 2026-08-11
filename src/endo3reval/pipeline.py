@@ -16,6 +16,7 @@ from endo3reval.endo3r import (
     OFFICIAL_DEMO_SHA,
     OFFICIAL_REPOSITORY as ENDO3R_REPOSITORY,
     PreflightError,
+    SUPPORTED_PYTHON_VERSION,
     build_demo_command,
     prediction_index,
     prediction_paths,
@@ -119,7 +120,9 @@ def _preflight(
     python_health = probe_python(
         runtime["python"],
         repository,
-        expected_version=str(endo3r_config.get("python_version", "3.9.25")),
+        expected_version=str(
+            endo3r_config.get("python_version", SUPPORTED_PYTHON_VERSION)
+        ),
         cuda_visible_devices=(
             None if cuda_visible_devices is None else str(cuda_visible_devices)
         ),

@@ -17,6 +17,7 @@ from endo3reval.data import SequenceRecord, frame_id, index_by_frame_id
 
 OFFICIAL_REPOSITORY = "https://github.com/wrld/Endo3R"
 OFFICIAL_DEMO_SHA = "b444081d680d198253aefa85ce6f7c88ea49b7f2"
+SUPPORTED_PYTHON_VERSION = "3.10.20"
 
 
 class PreflightError(RuntimeError):

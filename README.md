@@ -34,7 +34,7 @@ endo3reval/
 
 ## 服务器准备
 
-服务器已有按照 Endo3R README 配好的 conda 环境，Python 为 `3.9.25`。本项目不会
+服务器已有按照 Endo3R README 配好的 conda 环境，Python 为 `3.10.20`。本项目不会
 新建或升级该环境，也不要求 sudo。先通过 HTTPS 获取代码：
 
 ```bash
@@ -93,7 +93,7 @@ SCARED_ROOT/
 
 ```bash
 conda activate endo3r
-python --version  # 必须是 3.9.25
+python --version  # 必须是 3.10.20
 ```
 
 预检会在加载大模型前验证 Python、CUDA、NumPy/OpenCV resize ABI、官方入口和每个

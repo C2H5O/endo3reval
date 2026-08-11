@@ -7,10 +7,15 @@ import endo3reval.endo3r as endo3r
 from endo3reval.data import SequenceRecord
 from endo3reval.endo3r import (
     PreflightError,
+    SUPPORTED_PYTHON_VERSION,
     build_demo_command,
     clean_environment,
     validate_checkpoint,
 )
+
+
+def test_python_runtime_contract_is_3_10_20() -> None:
+    assert SUPPORTED_PYTHON_VERSION == "3.10.20"
 
 
 def _record(tmp_path: Path) -> SequenceRecord:
