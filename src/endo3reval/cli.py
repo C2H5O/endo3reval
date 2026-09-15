@@ -11,8 +11,8 @@ from endo3reval.pipeline import STAGES, run_pipeline
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Run official Endo3R inference on preprocessed SCARED and evaluate "
-            "the saved depths with the official Video Depth Anything protocol."
+            "Run official Endo3R inference on SCARED and evaluate "
+            "the saved depths with the vggtoda3 VDA spatial + TAE protocol."
         )
     )
     parser.add_argument(

@@ -1,9 +1,9 @@
 {
   "dataset": {
-    "root": "/path/to/preprocessed/scared",
+    "root": "/path/to/scared",
     "dataset_ids": [8, 9],
-    "frame_sources": ["left_rectified", "left"],
-    "ground_truth_directory": "data/depthmap_rectified",
+    "frame_sources": ["left", "left_finalpass", "rgb_data"],
+    "ground_truth_directory": "data/depth",
     "ground_truth_scale": 0.001,
     "ground_truth_channel": 0
   },
@@ -25,6 +25,12 @@
     "min_depth": 0.001,
     "max_depth": 100.0,
     "require_all_frames": true,
+    "tae": {
+      "enabled": true,
+      "require_all_pairs": true,
+      "frame_data_relative_directory": "data/frame_data",
+      "pose_translation_scale": 0.001
+    },
     "result_file": "evaluation_vda.json"
   },
   "output_root": "./outputs/scared_endo3r_vda"

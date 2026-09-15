@@ -1,17 +1,20 @@
 # endo3reval
 
-在预处理后的 SCARED dataset 8/9 上调用官方 Endo3R 推理，并用官方
+在 SCARED dataset 8/9 上调用官方 Endo3R 原生推理，并用 `vggtoda3` 的
 [Video Depth Anything](https://github.com/DepthAnything/Video-Depth-Anything)
-深度评估协议计算 AbsRel、线性 RMSE 和 δ1，保存可复现的逐序列与总体 JSON。
+评估路径计算 AbsRel、线性 RMSE、δ1 和 TAE，保存可复现的逐序列与总体 JSON。
 
 ## 算法边界
 
 - Endo3R 作为独立的官方 checkout，通过它自己的 `demo.py` 运行；本项目不复制、
   patch 或修改模型代码。
-- VDA 评估保持官方 `benchmark/eval/eval.py` 的主流程：对完整序列在视差域做一次
-  scale/shift 最小二乘对齐，转回深度后计算三项官方指标。
+- 评估公式与项目 `vggtoda3` 一致：在 Endo3R 原始输出分辨率上对完整序列
+  做一次 float64 disparity scale/shift 最小二乘对齐，计算三项空间指标，再按官方
+  `benchmark/eval/eval_tae.py` 计算双向相邻帧 TAE。预测图不会 resize；只将 GT
+  最近邻缩放到预测图尺寸，并按同一尺寸缩放相机内参。
 - 唯一的模型输出适配是把 Endo3R 保存的 Z-depth 转为 reciprocal disparity；
-  SCARED 适配只负责目录发现、毫米到米转换、数值帧 ID 配对和尺寸匹配。
+  SCARED 适配只负责目录发现、毫米到米转换、数值帧 ID 配对、尺寸匹配和读取
+  `frame_data` 中的相机内外参。
 - 官方来源及固定 blob SHA 记录在每次输出 JSON 和 [算法说明](docs/ALGORITHM.md) 中。
 
 ## 项目结构
@@ -24,7 +27,8 @@ endo3reval/
 ├── src/endo3reval/
 │   ├── data.py                 # SCARED dataset8/9 与数值帧 ID 发现
 │   ├── endo3r.py               # 官方 demo.py 子进程、环境/权重预检
-│   ├── vda.py                  # 官方 VDA 对齐与指标
+│   ├── vda.py                  # 与 vggtoda3 一致的 VDA 空间对齐与指标
+│   ├── temporal_alignment.py   # 与 vggtoda3 一致的 VDA TAE
 │   ├── pipeline.py             # preflight/infer/evaluate/all 编排
 │   └── cli.py                  # 命令行入口
 └── tests/                      # 不加载模型的适配层回归测试
@@ -75,17 +79,22 @@ SCARED_ROOT/
 ├── dataset8/
 │   └── keyframe_0/
 │       └── data/
-│           ├── left_rectified/       # 或 left/
+│           ├── left/                 # 其次 left_finalpass/、rgb_data/
 │           │   ├── 000000.png
 │           │   └── ...
-│           └── depthmap_rectified/
-│               ├── 000000.npy
+│           ├── depth/
+│           │   ├── 000000.npy
+│           │   └── ...
+│           └── frame_data/
+│               ├── frame_data000000.json
 │               └── ...
 └── dataset9/
 ```
 
-默认按 `left_rectified -> left` 选择 RGB，GT 按 `0.001` 从毫米转换到米。没有 RGB
-或 GT 的 keyframe 会记录为 skipped，不会阻断其他可用序列。
+默认按与 `vggtoda3` 相同的 `left -> left_finalpass -> rgb_data` 优先级选择 RGB，
+GT 按 `0.001` 从毫米转换到米。TAE 使用
+`frame_data` 的 `KL` 与 `camera-pose`；严格模式下缺少相机文件会在模型推理前报错。
+没有 RGB 或 GT 的 keyframe 会记录为 skipped，不会阻断其他可用序列。
 
 ## 运行
 
@@ -137,10 +146,10 @@ predictions/                 # Endo3R 官方 depth/*.npy
 logs/                        # 每个序列的完整 stdout/stderr
 .runtime/preflight.json      # Python/CUDA/权重校验信息
 run_manifest.json            # 可恢复进度与失败原因
-evaluation_vda.json          # 逐序列及总体 VDA 指标
+evaluation_vda.json          # 逐序列及总体 VDA 空间指标、TAE、原生分辨率
 ```
 
-总体指标与官方 `eval.py` 一致，使用各序列指标的算术平均。
+总体指标与 `vggtoda3` 一致，使用各序列指标的算术平均。TAE 单位为百分比，越低越好。
 
 ## 本地开发验证
 

@@ -26,17 +26,25 @@ from endo3reval.endo3r import (
     run_demo,
     validate_checkpoints_cached,
 )
+from endo3reval.temporal_alignment import (
+    TAE_REFERENCE,
+    VDA_TAE_METADATA,
+    evaluate_tae_files,
+    preflight_tae,
+)
 from endo3reval.vda import (
     METRIC_NAMES,
     OFFICIAL_EVAL_SHA,
     OFFICIAL_METRIC_SHA,
     OFFICIAL_REPOSITORY as VDA_REPOSITORY,
+    SCARED_MAX_DEPTH,
+    SCARED_MIN_DEPTH,
     evaluate_files,
 )
 
 
 STAGES = ("preflight", "infer", "evaluate", "all")
-OFFICIAL_MIN_DEPTH = 1e-3
+OFFICIAL_MIN_DEPTH = SCARED_MIN_DEPTH
 
 
 def _relative_to_repository(value: str, repository: Path) -> Path:
@@ -86,6 +94,20 @@ def _runtime_values(config: Mapping[str, Any]) -> Dict[str, Any]:
         raise PreflightError(
             "VDA min_depth is algorithmically fixed at {}; received {}".format(
                 OFFICIAL_MIN_DEPTH, min_depth
+            )
+        )
+    max_depth = float(evaluation_config.get("max_depth", SCARED_MAX_DEPTH))
+    if max_depth != SCARED_MAX_DEPTH:
+        raise PreflightError(
+            "vggtoda3 SCARED max_depth is fixed at {}; received {}".format(
+                SCARED_MAX_DEPTH, max_depth
+            )
+        )
+    ground_truth_scale = float(dataset_config.get("ground_truth_scale", 0.001))
+    if ground_truth_scale != 0.001:
+        raise PreflightError(
+            "vggtoda3 SCARED GT scale is fixed at 0.001; received {}".format(
+                ground_truth_scale
             )
         )
     return {
@@ -142,6 +164,7 @@ def _preflight(
             "video_depth_anything": VDA_REPOSITORY,
             "vda_eval_blob_sha": OFFICIAL_EVAL_SHA,
             "vda_metric_blob_sha": OFFICIAL_METRIC_SHA,
+            "vda_tae_reference": TAE_REFERENCE,
         },
         "python": python_health,
         "checkpoints": checkpoint_health,
@@ -211,6 +234,10 @@ def run_pipeline(
     )
     if limit_sequences is not None:
         records = records[:limit_sequences]
+    if stage in ("preflight", "evaluate", "all"):
+        tae_config = config["evaluation"].get("tae", {})
+        for record in records:
+            preflight_tae(record, tae_config)
 
     manifest_path = output_root / "run_manifest.json"
     manifest: Dict[str, Any] = {
@@ -315,9 +342,23 @@ def run_pipeline(
                         dataset_config.get("ground_truth_channel", 0)
                     ),
                     min_depth=OFFICIAL_MIN_DEPTH,
-                    max_depth=float(evaluation_config.get("max_depth", 100.0)),
+                    max_depth=SCARED_MAX_DEPTH,
                     device=str(evaluation_config.get("device", "cuda")),
                 )
+                alignment = evaluated["alignment"]
+                evaluation_shape = tuple(evaluated["evaluation_shape_hxw"])
+                temporal = evaluate_tae_files(
+                    record,
+                    predictions,
+                    matched_ids,
+                    disparity_scale=float(alignment["scale"]),
+                    disparity_shift=float(alignment["shift"]),
+                    evaluation_shape=evaluation_shape,
+                    tae_config=evaluation_config.get("tae", {}),
+                )
+                evaluated["temporal"] = temporal
+                evaluated["metrics"]["tae"] = temporal["tae"]
+                evaluated["matched_frame_count"] = evaluated["frame_count"]
                 evaluated.update(record.to_dict())
                 evaluated["prediction_directory"] = str(depth_directory)
                 sequence_results.append(evaluated)
@@ -326,17 +367,18 @@ def run_pipeline(
                 atomic_write_json(manifest_path, manifest)
 
         result: Dict[str, Any] = {
-            "schema_version": 1,
+            "schema_version": 2,
             "model": "Endo3R",
-            "dataset": "preprocessed SCARED",
+            "dataset": "SCARED",
             "dataset_ids": [
                 int(value) for value in dataset_config.get("dataset_ids", [8, 9])
             ],
-            "protocol": "Video Depth Anything benchmark/eval/eval.py",
+            "protocol": "video-depth-anything-depth+video-depth-anything-tae-scared-v2",
+            **VDA_TAE_METADATA,
             "core_algorithms_modified": False,
             "adapter": (
                 "official Endo3R Z-depth .npy -> reciprocal disparity -> official "
-                "VDA sequence-global disparity scale/shift and metrics"
+                "VDA sequence-global disparity scale/shift, spatial metrics, and TAE"
             ),
             "official_sources": preflight["official_sources"],
             "config": str(config["_config_path"]),
@@ -352,6 +394,48 @@ def run_pipeline(
                 )
                 for name in METRIC_NAMES
             }
+            temporal_values = [
+                item["metrics"]["tae"]
+                for item in sequence_results
+                if item["metrics"]["tae"] is not None
+            ]
+            result["metrics"]["tae"] = (
+                float(np.mean(temporal_values)) if temporal_values else None
+            )
+            result["metric_aggregation"] = "macro mean over evaluated sequences"
+            evaluation_resolutions = sorted(
+                {
+                    tuple(item["evaluation_shape_hxw"])
+                    for item in sequence_results
+                }
+            )
+            result["evaluation_resolution_hw"] = (
+                list(evaluation_resolutions[0])
+                if len(evaluation_resolutions) == 1
+                else None
+            )
+            result["evaluation_resolutions_hw"] = [
+                list(shape) for shape in evaluation_resolutions
+            ]
+            result["evaluation_resolution_source"] = "native_endo3r_depth_output"
+            result["tae_sequence_count"] = len(temporal_values)
+            result["complete_gt_coverage"] = not skipped and all(
+                item["matched_frame_count"] == item["frame_count"]
+                and item["valid_frame_count"] > 0
+                for item in sequence_results
+            )
+            result["complete_tae_coverage"] = bool(temporal_values) and all(
+                item["temporal"]["status"] == "complete"
+                for item in sequence_results
+            )
+            result["full_test_set"] = (
+                limit_sequences is None
+                and set(result["dataset_ids"]) == {8, 9}
+                and not skipped
+                and len(sequence_results) == len(records)
+                and result["complete_gt_coverage"]
+                and result["complete_tae_coverage"]
+            )
             result_file = output_root / str(
                 evaluation_config.get("result_file", "evaluation_vda.json")
             )

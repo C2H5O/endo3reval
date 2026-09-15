@@ -5,6 +5,7 @@ import pytest
 
 from endo3reval.vda import (
     evaluate_files,
+    load_ground_truth,
     official_vda_sequence_metrics,
 )
 
@@ -56,3 +57,17 @@ def test_file_adapter_converts_endo3r_depth_to_disparity(tmp_path: Path) -> None
 
     assert result["metrics"]["abs_relative_difference"] < 1e-5
     assert result["metrics"]["delta1_acc"] == pytest.approx(1.0)
+    assert result["evaluation_shape_hxw"] == [2, 3]
+
+
+def test_ground_truth_resize_matches_vggtoda3_nearest_neighbor(tmp_path: Path) -> None:
+    path = tmp_path / "depth.npy"
+    np.save(
+        path,
+        np.array([[1000.0, 2000.0], [3000.0, 4000.0]], dtype=np.float32),
+    )
+    resized = load_ground_truth(path, 0.001, 0, target_shape=(2, 4))
+    np.testing.assert_allclose(
+        resized,
+        np.array([[1.0, 1.0, 2.0, 2.0], [3.0, 3.0, 4.0, 4.0]], dtype=np.float32),
+    )

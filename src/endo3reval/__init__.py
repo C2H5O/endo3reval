@@ -1,3 +1,3 @@
-"""Endo3R inference and Video Depth Anything evaluation adapter."""
+"""Native Endo3R inference with vggtoda3-compatible VDA evaluation."""
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"

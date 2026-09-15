@@ -23,6 +23,8 @@ METRIC_NAMES = (
     "rmse_linear",
     "delta1_acc",
 )
+SCARED_MIN_DEPTH = 1e-3
+SCARED_MAX_DEPTH = 100.0
 
 
 class EvaluationError(RuntimeError):
@@ -126,20 +128,28 @@ def _load_array(path: Path, channel: int = 0) -> np.ndarray:
     return value
 
 
-def load_ground_truth(path: Path, scale: float, channel: int) -> np.ndarray:
+def load_ground_truth(
+    path: Path,
+    scale: float,
+    channel: int,
+    target_shape: Optional[Tuple[int, int]] = None,
+) -> np.ndarray:
     value = _load_array(path, channel=channel) * float(scale)
-    value[value == 0] = -1
+    if target_shape is not None and value.shape != target_shape:
+        value = cv2.resize(
+            value,
+            (target_shape[1], target_shape[0]),
+            interpolation=cv2.INTER_NEAREST,
+        )
     return value
 
 
-def load_endo3r_prediction(path: Path, target_shape: Tuple[int, int]) -> np.ndarray:
+def load_endo3r_prediction(path: Path) -> np.ndarray:
     depth = _load_array(path)
-    if depth.shape != target_shape:
-        # Official VDA get_infer uses cv2.resize without an interpolation override.
-        depth = cv2.resize(depth, (target_shape[1], target_shape[0]))
-    # Official VDA evaluates relative disparity. Endo3R saves Z depth, so this
-    # boundary adapter converts only the representation, not the algorithm.
-    return depth_to_disparity(depth)
+    # Match vggtoda3's student-depth boundary exactly. Endo3R saves Z depth;
+    # the shared evaluator consumes relative disparity. The native Endo3R grid
+    # is deliberately preserved here.
+    return np.reciprocal(np.clip(depth, a_min=1e-3, a_max=None))
 
 
 def official_vda_sequence_metrics(
@@ -226,25 +236,105 @@ def evaluate_files(
     max_depth: float,
     device: str,
 ) -> Dict[str, Any]:
-    predicted_disparities: List[np.ndarray] = []
-    ground_truth_depths: List[np.ndarray] = []
+    evaluation_shape: Optional[Tuple[int, int]] = None
+    ground_truth_depth_values: List[np.ndarray] = []
+    predicted_disparity_values: List[np.ndarray] = []
+    valid_pixel_count = 0
     for identifier in frame_ids:
+        # Preserve Endo3R's native output grid. Only GT is resized to that grid.
+        prediction = load_endo3r_prediction(prediction_by_id[identifier])
+        if evaluation_shape is None:
+            evaluation_shape = tuple(prediction.shape)
+        elif prediction.shape != evaluation_shape:
+            raise EvaluationError(
+                "Endo3R native prediction shapes differ within one sequence: "
+                "expected {}, found {} at frame {}".format(
+                    evaluation_shape, prediction.shape, identifier
+                )
+            )
         ground_truth = load_ground_truth(
             ground_truth_by_id[identifier],
             scale=ground_truth_scale,
             channel=ground_truth_channel,
+            target_shape=evaluation_shape,
         )
-        prediction = load_endo3r_prediction(
-            prediction_by_id[identifier], target_shape=ground_truth.shape
-        )
-        predicted_disparities.append(prediction)
-        ground_truth_depths.append(ground_truth)
-    result = official_vda_sequence_metrics(
-        predicted_disparities,
-        ground_truth_depths,
-        min_depth=min_depth,
-        max_depth=max_depth,
-        device=device,
+        prediction = np.clip(prediction, a_min=1e-3, a_max=None)
+        valid = (ground_truth > min_depth) & (ground_truth < max_depth)
+        if not np.any(valid):
+            continue
+        ground_truth_depth_values.append(ground_truth[valid])
+        predicted_disparity_values.append(prediction[valid])
+        valid_pixel_count += int(valid.sum())
+    if evaluation_shape is None:
+        raise EvaluationError("Cannot evaluate an empty sequence")
+    if not ground_truth_depth_values:
+        raise EvaluationError("No valid ground-truth pixels in sequence")
+    # Match vggtoda3: one global float64 lstsq over all GT-valid pixels.
+    gt_disp_masked = 1.0 / (
+        np.concatenate(ground_truth_depth_values)
+        .reshape((-1, 1))
+        .astype(np.float64)
+        + 1e-8
     )
+    pred_disp_masked = (
+        np.concatenate(predicted_disparity_values)
+        .reshape((-1, 1))
+        .astype(np.float64)
+    )
+    matrix = np.concatenate(
+        [pred_disp_masked, np.ones_like(pred_disp_masked)], axis=-1
+    )
+    scale, shift = np.linalg.lstsq(matrix, gt_disp_masked, rcond=None)[0]
+
+    metric_sums = np.zeros(len(METRIC_NAMES), dtype=np.float64)
+    valid_frame_count = 0
+    metric_functions = (abs_relative_difference, rmse_linear, delta1_acc)
+    for identifier in frame_ids:
+        prediction = load_endo3r_prediction(prediction_by_id[identifier])
+        if prediction.shape != evaluation_shape:
+            raise EvaluationError(
+                "Endo3R native prediction shapes differ within one sequence"
+            )
+        ground_truth = load_ground_truth(
+            ground_truth_by_id[identifier],
+            scale=ground_truth_scale,
+            channel=ground_truth_channel,
+            target_shape=evaluation_shape,
+        )
+        valid = (ground_truth > min_depth) & (ground_truth < max_depth)
+        if not np.any(valid):
+            continue
+        disparity = np.clip(prediction, a_min=1e-3, a_max=None)
+        aligned = np.clip(scale * disparity + shift, a_min=1e-3, a_max=None)
+        predicted_depth = np.clip(
+            depth_to_disparity(aligned), a_min=1e-3, a_max=max_depth
+        )
+        prediction_tensor = torch.from_numpy(predicted_depth[None])
+        ground_truth_tensor = torch.from_numpy(ground_truth[None])
+        valid_tensor = torch.from_numpy(valid[None])
+        for index, function in enumerate(metric_functions):
+            metric_sums[index] += function(
+                prediction_tensor, ground_truth_tensor, valid_tensor
+            ).item()
+        valid_frame_count += 1
+    if valid_frame_count == 0:
+        raise EvaluationError("No valid frames remain in sequence")
+    metric_values = metric_sums / valid_frame_count
+    result = {
+        "metrics": {
+            name: float(value) for name, value in zip(METRIC_NAMES, metric_values)
+        },
+        "alignment": {
+            "domain": "disparity",
+            "scope": "one scale and shift for the complete sequence",
+            "scale": float(np.asarray(scale).reshape(-1)[0]),
+            "shift": float(np.asarray(shift).reshape(-1)[0]),
+        },
+        "frame_count": len(frame_ids),
+        "valid_frame_count": valid_frame_count,
+        "valid_pixel_count": valid_pixel_count,
+    }
     result["frame_ids"] = list(frame_ids)
+    result["evaluation_shape_hxw"] = list(evaluation_shape)
+    result["evaluation_size"] = [evaluation_shape[1], evaluation_shape[0]]
     return result

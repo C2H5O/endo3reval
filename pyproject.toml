@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "endo3reval"
-version = "0.1.0"
-description = "Run official Endo3R inference on preprocessed SCARED and evaluate it with the official Video Depth Anything protocol."
+version = "0.2.0"
+description = "Run native Endo3R inference on SCARED and evaluate it with the vggtoda3 VDA spatial and TAE protocol."
 readme = "README.md"
 requires-python = ">=3.10,<3.11"
 license = {text = "Apache-2.0"}
