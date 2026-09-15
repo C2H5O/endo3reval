@@ -8,13 +8,15 @@
 
 - Endo3R 作为独立的官方 checkout，通过它自己的 `demo.py` 运行；本项目不复制、
   patch 或修改模型代码。
-- 评估公式与项目 `vggtoda3` 一致：在 Endo3R 原始输出分辨率上对完整序列
+- 评估公式与项目 `vggtoda3` 一致：官方 `--resolution 320` 保持不变，其原生
+  输出为 256 x 320 (H x W)，同时也是显式锁定的论文统一评估网格。在该网格上对完整序列
   做一次 float64 disparity scale/shift 最小二乘对齐，计算三项空间指标，再按官方
   `benchmark/eval/eval_tae.py` 计算双向相邻帧 TAE。预测图不会 resize；只将 GT
   最近邻缩放到预测图尺寸，并按同一尺寸缩放相机内参。
 - 唯一的模型输出适配是把 Endo3R 保存的 Z-depth 转为 reciprocal disparity；
   SCARED 适配只负责目录发现、毫米到米转换、数值帧 ID 配对、尺寸匹配和读取
-  `frame_data` 中的相机内外参。
+  `frame_data` 中的相机内外参。若预测不是 256 x 320，评估会立即报错而不会
+  静默 resize reference prediction。
 - 官方来源及固定 blob SHA 记录在每次输出 JSON 和 [算法说明](docs/ALGORITHM.md) 中。
 
 ## 项目结构
@@ -150,6 +152,9 @@ evaluation_vda.json          # 逐序列及总体 VDA 空间指标、TAE、原�
 ```
 
 总体指标与 `vggtoda3` 一致，使用各序列指标的算术平均。TAE 单位为百分比，越低越好。
+结果 JSON 分别记录 `model_input_resolution_hw`、
+`native_prediction_resolution_hw` 和 `evaluation_resolution_hw`，三者均为
+`[256, 320]`。GT depth 使用最近邻缩放；aligned depth 与 TAE 也在同一网格。
 
 ## 本地开发验证
 

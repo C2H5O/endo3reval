@@ -22,6 +22,8 @@
   },
   "evaluation": {
     "device": "cuda",
+    "height": 256,
+    "width": 320,
     "min_depth": 0.001,
     "max_depth": 100.0,
     "require_all_frames": true,

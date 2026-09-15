@@ -12,10 +12,21 @@ from endo3reval.endo3r import (
     clean_environment,
     validate_checkpoint,
 )
+from endo3reval.pipeline import _locked_evaluation_shape
 
 
 def test_python_runtime_contract_is_3_10_20() -> None:
     assert SUPPORTED_PYTHON_VERSION == "3.10.20"
+
+
+def test_official_resolution_320_maps_to_native_256x320_grid() -> None:
+    assert _locked_evaluation_shape(
+        {"resolution": 320}, {"height": 256, "width": 320}
+    ) == (256, 320)
+    with pytest.raises(PreflightError, match="official --resolution 320"):
+        _locked_evaluation_shape(
+            {"resolution": 256}, {"height": 256, "width": 320}
+        )
 
 
 def _record(tmp_path: Path) -> SequenceRecord:

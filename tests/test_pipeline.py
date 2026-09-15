@@ -38,7 +38,7 @@ def test_evaluate_stage_wires_vggtoda3_spatial_and_tae_results(
         )
         np.save(
             str(prediction_directory / "depth_{:06d}.npy".format(identifier)),
-            np.ones((4, 6), dtype=np.float32),
+            np.ones((256, 320), dtype=np.float32),
         )
         (camera_directory / "frame_data{:06d}.json".format(identifier)).write_text(
             json.dumps(
@@ -65,9 +65,12 @@ def test_evaluate_stage_wires_vggtoda3_spatial_and_tae_results(
             "python": sys.executable,
             "checkpoint": str(tmp_path / "endo3r.pth"),
             "device": "cpu",
+            "resolution": 320,
         },
         "evaluation": {
             "device": "cpu",
+            "height": 256,
+            "width": 320,
             "min_depth": 0.001,
             "max_depth": 100.0,
             "require_all_frames": True,
@@ -86,8 +89,10 @@ def test_evaluate_stage_wires_vggtoda3_spatial_and_tae_results(
     result = run_pipeline(config_path, stage="evaluate")
 
     assert result["protocol"] == "video-depth-anything-depth+video-depth-anything-tae-scared-v2"
-    assert result["evaluation_resolution_hw"] == [4, 6]
-    assert result["evaluation_resolution_source"] == "native_endo3r_depth_output"
+    assert result["model_input_resolution_hw"] == [256, 320]
+    assert result["native_prediction_resolution_hw"] == [256, 320]
+    assert result["evaluation_resolution_hw"] == [256, 320]
+    assert result["evaluation_resolution_source"] == "configured_native_endo3r_depth_output"
     assert result["metrics"]["abs_relative_difference"] == pytest.approx(
         0.0, abs=1e-6
     )
@@ -97,3 +102,4 @@ def test_evaluate_stage_wires_vggtoda3_spatial_and_tae_results(
     assert not result["full_test_set"]
     written = json.loads((output_root / "evaluation_vda.json").read_text(encoding="utf-8"))
     assert written["sequences"][0]["temporal"]["status"] == "complete"
+    assert written["sequences"][0]["temporal"]["evaluation_resolution_hw"] == [256, 320]

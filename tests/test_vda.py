@@ -4,10 +4,30 @@ import numpy as np
 import pytest
 
 from endo3reval.vda import (
+    EvaluationError,
     evaluate_files,
     load_ground_truth,
     official_vda_sequence_metrics,
 )
+
+
+def test_prediction_must_match_locked_reference_grid(tmp_path: Path) -> None:
+    prediction_path = tmp_path / "pred_000000.npy"
+    ground_truth_path = tmp_path / "depth_000000.npy"
+    np.save(prediction_path, np.ones((4, 6), dtype=np.float32))
+    np.save(ground_truth_path, np.ones((4, 6), dtype=np.float32) * 1000.0)
+    with pytest.raises(EvaluationError, match="configured evaluation shape"):
+        evaluate_files(
+            {0: prediction_path},
+            {0: ground_truth_path},
+            [0],
+            ground_truth_scale=0.001,
+            ground_truth_channel=0,
+            min_depth=0.001,
+            max_depth=100.0,
+            device="cpu",
+            evaluation_shape=(256, 320),
+        )
 
 
 def test_official_vda_sequence_alignment_recovers_affine_disparity() -> None:

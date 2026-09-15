@@ -252,6 +252,7 @@ def evaluate_tae_files(
         evaluated_pair_count=pair_count,
         skipped_frames=skipped,
         camera_directory=str(directory),
+        evaluation_resolution_hw=list(evaluation_shape),
         camera_source="SCARED frame_data KL and camera-pose",
         scared_raw_pose_convention="world_to_camera",
         vda_pose_convention="camera_to_world",

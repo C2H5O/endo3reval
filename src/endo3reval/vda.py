@@ -235,8 +235,8 @@ def evaluate_files(
     min_depth: float,
     max_depth: float,
     device: str,
+    evaluation_shape: Optional[Tuple[int, int]] = None,
 ) -> Dict[str, Any]:
-    evaluation_shape: Optional[Tuple[int, int]] = None
     ground_truth_depth_values: List[np.ndarray] = []
     predicted_disparity_values: List[np.ndarray] = []
     valid_pixel_count = 0
@@ -247,7 +247,8 @@ def evaluate_files(
             evaluation_shape = tuple(prediction.shape)
         elif prediction.shape != evaluation_shape:
             raise EvaluationError(
-                "Endo3R native prediction shapes differ within one sequence: "
+                "Endo3R native prediction must match the configured evaluation "
+                "shape: "
                 "expected {}, found {} at frame {}".format(
                     evaluation_shape, prediction.shape, identifier
                 )
@@ -335,6 +336,7 @@ def evaluate_files(
         "valid_pixel_count": valid_pixel_count,
     }
     result["frame_ids"] = list(frame_ids)
+    result["native_prediction_resolution_hw"] = list(evaluation_shape)
     result["evaluation_shape_hxw"] = list(evaluation_shape)
     result["evaluation_size"] = [evaluation_shape[1], evaluation_shape[0]]
     return result

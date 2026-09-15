@@ -45,6 +45,29 @@ from endo3reval.vda import (
 
 STAGES = ("preflight", "infer", "evaluate", "all")
 OFFICIAL_MIN_DEPTH = SCARED_MIN_DEPTH
+ENDO3R_OFFICIAL_RESOLUTION = 320
+ENDO3R_NATIVE_RESOLUTION_HW = (256, 320)
+
+
+def _locked_evaluation_shape(
+    endo3r_config: Mapping[str, Any], evaluation_config: Mapping[str, Any]
+) -> Tuple[int, int]:
+    resolution = int(endo3r_config.get("resolution", ENDO3R_OFFICIAL_RESOLUTION))
+    if resolution != ENDO3R_OFFICIAL_RESOLUTION:
+        raise PreflightError(
+            "Endo3R paper evaluation requires official --resolution 320; "
+            "received {}".format(resolution)
+        )
+    shape = (
+        int(evaluation_config.get("height", ENDO3R_NATIVE_RESOLUTION_HW[0])),
+        int(evaluation_config.get("width", ENDO3R_NATIVE_RESOLUTION_HW[1])),
+    )
+    if shape != ENDO3R_NATIVE_RESOLUTION_HW:
+        raise PreflightError(
+            "Endo3R is the reference evaluation grid and must be 256x320 HxW; "
+            "received {}".format(shape)
+        )
+    return shape
 
 
 def _relative_to_repository(value: str, repository: Path) -> Path:
@@ -74,6 +97,7 @@ def _runtime_values(config: Mapping[str, Any]) -> Dict[str, Any]:
     dataset_config = config["dataset"]
     endo3r_config = config["endo3r"]
     evaluation_config = config["evaluation"]
+    evaluation_shape = _locked_evaluation_shape(endo3r_config, evaluation_config)
 
     repository = project_path(endo3r_config["repository"], config)
     checkpoint = project_path(endo3r_config["checkpoint"], config)
@@ -118,6 +142,7 @@ def _runtime_values(config: Mapping[str, Any]) -> Dict[str, Any]:
         "python": python_executable,
         "output_root": output_root,
         "required_files": required_files,
+        "evaluation_shape": evaluation_shape,
     }
 
 
@@ -344,6 +369,7 @@ def run_pipeline(
                     min_depth=OFFICIAL_MIN_DEPTH,
                     max_depth=SCARED_MAX_DEPTH,
                     device=str(evaluation_config.get("device", "cuda")),
+                    evaluation_shape=tuple(runtime["evaluation_shape"]),
                 )
                 alignment = evaluated["alignment"]
                 evaluation_shape = tuple(evaluated["evaluation_shape_hxw"])
@@ -381,6 +407,9 @@ def run_pipeline(
                 "VDA sequence-global disparity scale/shift, spatial metrics, and TAE"
             ),
             "official_sources": preflight["official_sources"],
+            "model_input_resolution_hw": list(ENDO3R_NATIVE_RESOLUTION_HW),
+            "native_prediction_resolution_hw": list(ENDO3R_NATIVE_RESOLUTION_HW),
+            "evaluation_resolution_hw": list(runtime["evaluation_shape"]),
             "config": str(config["_config_path"]),
             "commands": commands,
             "sequence_count": len(records),
@@ -409,15 +438,17 @@ def run_pipeline(
                     for item in sequence_results
                 }
             )
-            result["evaluation_resolution_hw"] = (
-                list(evaluation_resolutions[0])
-                if len(evaluation_resolutions) == 1
-                else None
-            )
+            if evaluation_resolutions != [tuple(runtime["evaluation_shape"])]:
+                raise RuntimeError(
+                    "Endo3R results escaped the configured 256x320 evaluation grid: "
+                    "{}".format(evaluation_resolutions)
+                )
             result["evaluation_resolutions_hw"] = [
                 list(shape) for shape in evaluation_resolutions
             ]
-            result["evaluation_resolution_source"] = "native_endo3r_depth_output"
+            result["evaluation_resolution_source"] = (
+                "configured_native_endo3r_depth_output"
+            )
             result["tae_sequence_count"] = len(temporal_values)
             result["complete_gt_coverage"] = not skipped and all(
                 item["matched_frame_count"] == item["frame_count"]
